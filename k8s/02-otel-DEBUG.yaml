@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+      hostmetrics:
+        collection_interval: 10s
+        scrapers:
+          cpu:
+          memory:
+          filesystem:
+          network:
+
+    processors:
+      batch:
+
+    exporters:
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+      debug:
+        verbosity: detailed
+
+    service:
+      telemetry:
+        logs:
+          level: info
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [batch]
+          exporters: [debug]
+        metrics:
+          receivers: [otlp, hostmetrics]
+          processors: [batch]
+          exporters: [prometheus, debug]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: prom-metrics
+      port: 8889
+      targetPort: 8889
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.114.0
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--config=/etc/otel/config.yaml"
+          ports:
+            - containerPort: 4317
+              name: otlp-grpc
+            - containerPort: 8889
+              name: prom-metrics
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/otel
+      volumes:
+        - name: config-volume
+          configMap:
+            name: otel-collector-config

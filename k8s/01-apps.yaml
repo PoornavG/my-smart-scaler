@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      # --- ADD THIS SECTION ---
+      imagePullSecrets:
+        - name: acr-secret
+      # ------------------------
+      containers:
+        - name: frontend
+          image: poornavscaleregistry.azurecr.io/frontend:v1
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: frontend
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-a-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-a
+  template:
+    metadata:
+      labels:
+        app: service-a
+    spec:
+      # --- ADD THIS SECTION ---
+      imagePullSecrets:
+        - name: acr-secret
+      # ------------------------
+      containers:
+        - name: service-a
+          image: poornavscaleregistry.azurecr.io/service-a:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SERVICE_B_URL
+              value: "http://service-b/api"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-a
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: service-a
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service-b-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-b
+  template:
+    metadata:
+      labels:
+        app: service-b
+    spec:
+      # --- ADD THIS SECTION ---
+      imagePullSecrets:
+        - name: acr-secret
+      # ------------------------
+      containers:
+        - name: service-b
+          image: poornavscaleregistry.azurecr.io/service-b:v1
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-b
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: service-b

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.0.0
+          ports:
+            - containerPort: 3000
+          # We can add an environment variable to pre-configure
+          # the Prometheus data source.
+          env:
+            - name: GF_DATASOURCES_DEFAULT_NAME
+              value: "Prometheus"
+            - name: GF_DATASOURCES_0_NAME
+              value: "Prometheus"
+            - name: GF_DATASOURCES_0_TYPE
+              value: "prometheus"
+            - name: GF_DATASOURCES_0_URL
+              # 'http://prometheus:9090' is the DNS name of
+              # the Prometheus service we created in the last step.
+              value: "http://prometheus:9090"
+            - name: GF_DATASOURCES_0_ACCESS
+              value: "proxy"
+            - name: GF_DATASOURCES_0_IS_DEFAULT
+              value: "true"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+spec:
+  # We will NOT use a LoadBalancer this time.
+  # We'll access it securely using a 'port-forward'.
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000
+  selector:
+    app: grafana
