@@ -18,7 +18,7 @@ spec:
       # ------------------------
       containers:
         - name: frontend
-          image: poornavscaleregistry.azurecr.io/frontend:v1
+          image: poornavscaleregistry.azurecr.io/frontend:v3
           ports:
             - containerPort: 8080
 ---
@@ -54,7 +54,7 @@ spec:
       # ------------------------
       containers:
         - name: service-a
-          image: poornavscaleregistry.azurecr.io/service-a:v1
+          image: poornavscaleregistry.azurecr.io/service-a:v3
           ports:
             - containerPort: 8080
           env:
@@ -93,7 +93,7 @@ spec:
       # ------------------------
       containers:
         - name: service-b
-          image: poornavscaleregistry.azurecr.io/service-b:v1
+          image: poornavscaleregistry.azurecr.io/service-b:v3
           ports:
             - containerPort: 8080
 ---

@@ -17,8 +17,7 @@ spec:
           image: grafana/grafana:10.0.0
           ports:
             - containerPort: 3000
-          # We can add an environment variable to pre-configure
-          # the Prometheus data source.
+          # Auto-configure Prometheus datasource
           env:
             - name: GF_DATASOURCES_DEFAULT_NAME
               value: "Prometheus"
@@ -27,9 +26,7 @@ spec:
             - name: GF_DATASOURCES_0_TYPE
               value: "prometheus"
             - name: GF_DATASOURCES_0_URL
-              # 'http://prometheus:9090' is the DNS name of
-              # the Prometheus service we created in the last step.
-              value: "http://prometheus:9090"
+              value: "http://prometheus:9090" # Internal service name
             - name: GF_DATASOURCES_0_ACCESS
               value: "proxy"
             - name: GF_DATASOURCES_0_IS_DEFAULT
@@ -40,8 +37,7 @@ kind: Service
 metadata:
   name: grafana
 spec:
-  # We will NOT use a LoadBalancer this time.
-  # We'll access it securely using a 'port-forward'.
+  # Access via port-forward
   type: ClusterIP
   ports:
     - port: 3000

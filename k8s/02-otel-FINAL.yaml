@@ -7,15 +7,15 @@ data:
     receivers:
       otlp: # Receives TRACES from our apps
         protocols:
+          # --- Revert to gRPC (less likely to be the issue) ---
           grpc:
             endpoint: "0.0.0.0:4317"
-      # We add Prometheus receiver *itself* to satisfy the metrics pipeline
-      # This isn't strictly necessary for spanmetrics, but activates the exporter
+      # Dummy receiver for metrics pipeline validation
       prometheus/self:
         config:
           scrape_configs:
             - job_name: 'otel-collector-internal'
-              scrape_interval: 10s
+              scrape_interval: 1m # Scrape less often, it's just for validation
               static_configs:
                 - targets: [ 'localhost:8888' ] # Internal metrics port
 
@@ -23,7 +23,7 @@ data:
       batch:
       # This processor reads TRACES and generates METRICS
       spanmetrics:
-        metrics_exporter: prometheus # Points to the exporter below
+        metrics_exporter: prometheus # Tells spanmetrics which exporter to use
         latency_histogram_buckets: [100ms, 300ms, 500ms, 750ms, 1s, 2s]
         dimensions:
           - name: http.method
@@ -33,7 +33,7 @@ data:
       # Define the prometheus exporter (listens on 8889)
       prometheus:
         endpoint: "0.0.0.0:8889"
-      # Debug exporter for seeing traces in logs
+      # Debug exporter for seeing traces/metrics in logs
       debug:
         verbosity: basic
 
@@ -50,12 +50,12 @@ data:
           processors: [spanmetrics, batch] # Spanmetrics processes traces here
           exporters: [debug] # Traces go ONLY to the debug exporter
 
-        # Define a metrics pipeline primarily to ACTIVATE the prometheus exporter
+        # Define a metrics pipeline EXPLICITLY to activate prometheus exporter
         metrics:
-          # Use the 'prometheus/self' receiver to give it something to receive
+          # Use the dummy 'prometheus/self' receiver to satisfy validation
           receivers: [prometheus/self]
           processors: [batch]
-          # Use BOTH exporters here
+          # CRITICAL: Activate prometheus exporter HERE
           exporters: [prometheus, debug]
 ---
 apiVersion: v1
@@ -66,6 +66,7 @@ spec:
   selector:
     app: otel-collector
   ports:
+    # --- Revert to gRPC port ---
     - name: otlp-grpc
       port: 4317
       targetPort: 4317
@@ -98,9 +99,10 @@ spec:
             - name: config-volume
               mountPath: /conf
           ports:
-            - containerPort: 4317 # OTLP receiver endpoint
+            # --- Revert to gRPC port ---
+            - containerPort: 4317
               name: otlp-grpc
-            - containerPort: 8889 # Prometheus exporter endpoint
+            - containerPort: 8889
               name: prom-metrics
             - containerPort: 8888 # Internal metrics endpoint
               name: prom-internal
