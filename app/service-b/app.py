@@ -14,9 +14,8 @@ def service_b_api():
     # --- This is our "simulated" work ---
     # We add a small, random delay to simulate database work
     # and make our transaction latencies more realistic.
-    import random
-    work_time = random.uniform(0.1, 0.3) # 100ms to 300ms
-    time.sleep(work_time)
+    logging.info("Service B: Simulating slow database query...")
+    time.sleep(1)
     # ------------------------------------
 
     logger.info("Service B: Work complete, returning.")

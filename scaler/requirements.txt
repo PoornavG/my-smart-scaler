@@ -1,0 +1,7 @@
+#For talking to the Kubernetes API
+
+kubernetes
+
+#For talking to the Prometheus API
+
+prometheus-api-client

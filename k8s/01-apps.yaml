@@ -93,7 +93,7 @@ spec:
       # ------------------------
       containers:
         - name: service-b
-          image: poornavscaleregistry.azurecr.io/service-b:v3
+          image: poornavscaleregistry.azurecr.io/service-b:v4
           ports:
             - containerPort: 8080
 ---
