@@ -9,10 +9,30 @@ data:
       scrape_interval: 15s # Scrape targets every 15 seconds
 
     scrape_configs:
-      # This job tells Prometheus to find our OTel collector
+      # --- JOB 1: Scrape our OTel Collector ---
       - job_name: 'otel-collector'
         static_configs:
           - targets: ['otel-collector:8889'] # The service:port we created
+
+      # --- NEW JOB 2: Scrape Kubernetes's internal state metrics ---
+      - job_name: 'kube-state-metrics'
+        # This tells Prometheus to auto-discover services in Kubernetes
+        kubernetes_sd_configs:
+          - role: endpoints
+        # This section tells Prometheus HOW to find the right service
+        relabel_configs:
+        # Keep only services that are in the 'kube-system' namespace
+        - source_labels: [__meta_kubernetes_namespace]
+          action: keep
+          regex: kube-system
+        # Keep only the service whose name is 'kube-state-metrics'
+        - source_labels: [__meta_kubernetes_service_name]
+          action: keep
+          regex: kube-state-metrics
+        # Use the service's port (which is 8080) for scraping
+        - source_labels: [__meta_kubernetes_endpoint_port_name]
+          action: keep
+          regex: http
 ---
 # These are the permissions Prometheus needs to talk to the
 # Kubernetes API to discover other pods and services.

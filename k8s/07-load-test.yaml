@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-test-deployment
+spec:
+  replicas: 1 # We only need 1 pod to generate enough load
+  selector:
+    matchLabels:
+      app: load-tester
+  template:
+    metadata:
+      labels:
+        app: load-tester
+    spec:
+      containers:
+        - name: load-tester
+          # This is the most basic, reliable image in the world.
+          image: busybox:latest
+
+          # --- THIS IS THE FIX ---
+          # We are using 'wget' (which is included in busybox)
+          # instead of 'curl' (which is not).
+          command: ["sh", "-c"]
+          args: ["while true; do wget -q -O - http://frontend/checkout; done"]
+
+      restartPolicy: Always
