@@ -62,7 +62,7 @@ spec:
       containers:
         - name: scaler
           # --- THIS IS THE CHANGE ---
-          image: poornavscaleregistry.azurecr.io/scaler:v3
+          image: poornavscalernov11.azurecr.io/scaler:v4
           env:
             # Pass the internal URL of our Prometheus service to the script
             - name: PROMETHEUS_URL

@@ -13,30 +13,28 @@ logging.basicConfig(
 PROMETHEUS_URL = os.environ.get("PROMETHEUS_URL", "http://prometheus:9090")
 SLA_MS = 500  # 500ms
 QUERY_RANGE = "1m"
-MAX_REPLICAS = 5 # Set a max replica count
-MIN_REPLICAS = 1 # Set a min replica count
-NAMESPACE = "default" # Kubernetes namespace
+MAX_REPLICAS = 5
+MIN_REPLICAS = 1
+NAMESPACE = "default"
+COOLDOWN_SECONDS = 60
+# --- NEW: Traffic (RPS) threshold for scaling down ---
+# If RPS is below this, we consider it "idle" and can scale down.
+IDLE_RPS_THRESHOLD = 0.5 
 
-# --- NEW: Cooldown period, as you requested ---
-COOLDOWN_SECONDS = 60 # Wait 60 seconds after any scaling action
-# This variable will track the time of our last action
 last_scale_time = 0
 
-# Map metric service.name to Kubernetes deployment name
 SERVICES_TO_MONITOR = {
     "frontend-service": "frontend-deployment",
     "service-a": "service-a-deployment",
     "service-b": "service-b-deployment",
 }
-# We will only scale down the 'worker' services
 SERVICES_TO_SCALE_DOWN = {
     "service-a": "service-a-deployment",
     "service-b": "service-b-deployment",
 }
 
-
 def get_k8s_api():
-    """Loads Kubernetes configuration (in-cluster or local)."""
+    """Loads Kubernetes configuration."""
     try:
         config.load_incluster_config()
         logging.info("Loaded in-cluster Kubernetes config.")
@@ -55,39 +53,37 @@ def get_prometheus_connection():
         logging.error(f"Failed to connect to Prometheus: {e}")
         return None
 
+def get_avg_metric(prom_client, query):
+    """A generic helper to run a query and get the average value."""
+    try:
+        result = prom_client.custom_query(query=query)
+        if not result or not result[0].get('value'):
+            return 0.0 # No data, return 0
+        return float(result[0]['value'][1])
+    except Exception as e:
+        logging.error(f"Failed to query Prometheus: {query} | Error: {e}")
+        return None
+
 def get_average_latency_ms(prom_client, service_name, span_kind, range_sec="1m"):
     """
     Queries Prometheus for the average latency of a specific service
     and span_kind over a given time range.
-    
-    Calculated as: sum(rate(sum)) / sum(rate(count))
     """
-    try:
-        # PromQL query for the SUM of latencies
-        query_suffix = f'{{service_name="{service_name}", span_kind="{span_kind}"}}[{range_sec}]'
-        latency_sum_query = f'sum(rate(latency_milliseconds_sum{query_suffix}))'
-        latency_count_query = f'sum(rate(latency_milliseconds_count{query_suffix}))'
+    query_suffix = f'{{service_name="{service_name}", span_kind="{span_kind}"}}[{range_sec}]'
+    latency_sum_query = f'sum(rate(latency_milliseconds_sum{query_suffix}))'
+    latency_count_query = f'sum(rate(latency_milliseconds_count{query_suffix}))'
 
-        result_sum = prom_client.custom_query(query=latency_sum_query)
-        result_count = prom_client.custom_query(query=latency_count_query)
+    total_latency_sum = get_avg_metric(prom_client, latency_sum_query)
+    total_latency_count = get_avg_metric(prom_client, latency_count_query)
 
-        if not result_sum or not result_count or not result_sum[0].get('value') or not result_count[0].get('value'):
-            logging.warning(f"No latency data found for service: {service_name}, span_kind: {span_kind}")
-            return 0.0  # Return 0 if no data
+    if total_latency_sum is None or total_latency_count is None:
+        return None # Error occurred in get_avg_metric
+    
+    if total_latency_count == 0:
+        logging.info(f"No requests observed for service: {service_name}, span_kind: {span_kind}")
+        return 0.0  # No requests, so latency is 0
 
-        total_latency_sum = float(result_sum[0]['value'][1])
-        total_latency_count = float(result_count[0]['value'][1])
-
-        if total_latency_count == 0:
-            logging.info(f"No requests observed for service: {service_name}, span_kind: {span_kind}")
-            return 0.0  # No requests, so latency is 0
-
-        avg_latency_ms = total_latency_sum / total_latency_count
-        return avg_latency_ms
-
-    except Exception as e:
-        logging.error(f"Error querying latency for {service_name} ({span_kind}): {e}")
-        return None # Return None on error
+    return total_latency_sum / total_latency_count
 
 def get_current_replicas(k8s_api, deployment_name):
     """Gets the current number of replicas for a deployment."""
@@ -109,19 +105,17 @@ def scale_deployment(k8s_api, deployment_name, new_replica_count):
             name=deployment_name, namespace=NAMESPACE, body=body
         )
         logging.info(f"Successfully scaled {deployment_name} to {new_replica_count} replicas.")
-        # --- NEW: Set the cooldown timer ---
         last_scale_time = time.time()
     except Exception as e:
         logging.error(f"Failed to scale {deployment_name}: {e}")
 
 # --- Main Loop ---
 def main_loop():
-    logging.info("--- Custom Scaler Started (v3 - Scale Up/Down with Cooldown) ---")
+    logging.info("--- Custom Scaler Started (v4 - Load-Aware) ---")
     k8s_api = get_k8s_api()
     prom = get_prometheus_connection()
-
+    
     global last_scale_time
-    # Initialize to allow immediate first check
     last_scale_time = time.time() - COOLDOWN_SECONDS 
 
     if not prom:
@@ -130,13 +124,13 @@ def main_loop():
 
     while True:
         try:
-            # --- NEW: Cooldown Check ---
+            # --- Cooldown Check ---
             current_time = time.time()
             if current_time < last_scale_time + COOLDOWN_SECONDS:
                 wait_time = (last_scale_time + COOLDOWN_SECONDS) - current_time
                 logging.info(f"In cooldown period. Waiting {int(wait_time)} more seconds...")
-                time.sleep(15) # Sleep 15 to not spam logs
-                continue # Skip to the next loop iteration
+                time.sleep(15) 
+                continue 
 
             # 1. Check overall transaction latency
             total_avg_latency = get_average_latency_ms(
@@ -144,7 +138,7 @@ def main_loop():
             )
 
             if total_avg_latency is None:
-                logging.info("Skipping loop, no data yet.")
+                logging.info("Skipping loop, error querying Prometheus.")
                 time.sleep(15)
                 continue
 
@@ -181,7 +175,7 @@ def main_loop():
                     f"({k8s_deployment_name})"
                 )
 
-                # 4. Decide to Scale
+                # 4. Decide to Scale Up
                 current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
                 
                 if current_replicas is not None and current_replicas < MAX_REPLICAS:
@@ -196,26 +190,42 @@ def main_loop():
             
             # --- NEW: SCALE DOWN LOGIC ---
             else:
-                logging.info("SLA OK. Checking for services to scale down...")
-                scaled_down_one = False
-                # Check all scalable services
-                for service_name, k8s_deployment_name in SERVICES_TO_SCALE_DOWN.items():
-                    if scaled_down_one:
-                        break # Only scale down one service per loop
-                        
-                    current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
-                    
-                    if current_replicas is not None and current_replicas > MIN_REPLICAS:
-                        new_count = current_replicas - 1
-                        logging.info(
-                            f"Scaling {k8s_deployment_name} DOWN from "
-                            f"{current_replicas} to {new_count} replicas..."
-                        )
-                        scale_deployment(k8s_api, k8s_deployment_name, new_count)
-                        scaled_down_one = True # Set flag to exit loop
+                logging.info("SLA OK. Checking traffic load for scale-down...")
                 
-                if not scaled_down_one:
-                    logging.info("All services are at minimum replicas. No scale-down needed.")
+                # Check current requests per second (RPS)
+                rps_query = f'sum(rate(latency_milliseconds_count{{service_name="frontend-service", span_kind="SPAN_KIND_SERVER"}}[{QUERY_RANGE}]))'
+                current_rps = get_avg_metric(prom, rps_query)
+
+                if current_rps is None:
+                    logging.warning("Could not determine RPS. Skipping scale-down check.")
+                
+                # ONLY scale down if traffic is below our idle threshold
+                elif current_rps < IDLE_RPS_THRESHOLD:
+                    logging.info(f"Traffic is low ({current_rps:.2f} RPS). Checking for services to scale down...")
+                    scaled_down_one = False
+                    
+                    # Check all scalable services (to scale down whichever is highest)
+                    for service_name, k8s_deployment_name in SERVICES_TO_SCALE_DOWN.items():
+                        if scaled_down_one:
+                            break # Only scale down one service per loop
+                            
+                        current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
+                        
+                        if current_replicas is not None and current_replicas > MIN_REPLICAS:
+                            new_count = current_replicas - 1
+                            logging.info(
+                                f"Scaling {k8s_deployment_name} DOWN from "
+                                f"{current_replicas} to {new_count} replicas..."
+                            )
+                            scale_deployment(k8s_api, k8s_deployment_name, new_count)
+                            scaled_down_one = True # Set flag to exit loop
+                    
+                    if not scaled_down_one:
+                        logging.info("All services are at minimum replicas. No scale-down needed.")
+                
+                else: # Latency is OK, but traffic is HIGH
+                    logging.info(f"SLA OK, but traffic is high ({current_rps:.2f} RPS). Holding current replica count.")
+
             
             # Wait for 15 seconds before the next check
             time.sleep(15)

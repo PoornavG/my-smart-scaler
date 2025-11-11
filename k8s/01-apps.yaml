@@ -1,5 +1,6 @@
 # Contains Deployments & Services for frontend, service-a, service-b
-# Updated to use v4 (togglable) images for all services
+# (v4 images are the 'togglable' versions)
+# (Corrected registry name for frontend)
 
 apiVersion: apps/v1
 kind: Deployment
@@ -15,12 +16,13 @@ spec:
       labels:
         app: frontend
     spec:
+      # --- FIX: Added imagePullSecrets ---
       imagePullSecrets:
-        - name: acr-secret # Use the secret to pull from private registry
+        - name: acr-secret
       containers:
         - name: frontend
-          # --- THIS IS THE CHANGE ---
-          image: poornavscaleregistry.azurecr.io/frontend:v4
+          # --- FIX: Corrected registry name 'poornavscalernov11' ---
+          image: poornavscalernov11.azurecr.io/frontend:v4
           ports:
             - containerPort: 8080
 ---
@@ -41,7 +43,7 @@ kind: Deployment
 metadata:
   name: service-a-deployment
 spec:
-  replicas: 1 # Start at 1
+  replicas: 1
   selector:
     matchLabels:
       app: service-a
@@ -50,12 +52,12 @@ spec:
       labels:
         app: service-a
     spec:
+      # --- FIX: Added imagePullSecrets ---
       imagePullSecrets:
-        - name: acr-secret # Use the secret to pull from private registry
+        - name: acr-secret
       containers:
         - name: service-a
-          # Use the v4 (togglable) image we built
-          image: poornavscaleregistry.azurecr.io/service-a:v4
+          image: poornavscalernov11.azurecr.io/service-a:v4
           ports:
             - containerPort: 8080
           env:
@@ -79,7 +81,7 @@ kind: Deployment
 metadata:
   name: service-b-deployment
 spec:
-  replicas: 1 # Start at 1
+  replicas: 1
   selector:
     matchLabels:
       app: service-b
@@ -88,12 +90,12 @@ spec:
       labels:
         app: service-b
     spec:
+      # --- FIX: Added imagePullSecrets ---
       imagePullSecrets:
-        - name: acr-secret # Use the secret to pull from private registry
+        - name: acr-secret
       containers:
         - name: service-b
-          # Use the v5 (togglable) image we built
-          image: poornavscaleregistry.azurecr.io/service-b:v5
+          image: poornavscalernov11.azurecr.io/service-b:v4
           ports:
             - containerPort: 8080
 ---
