@@ -7,24 +7,24 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# --- A global variable to act as our "switch" ---
+# --- NEW: A global variable to act as our "switch" ---
 DELAY_ENABLED = False
 
 @app.route("/api")
-def service_b_api():
+def payment_api():
     global DELAY_ENABLED
-    logger.info("Service B (v4 Togglable): Received request.")
+    logger.info("Payment Service: Received request.")
     
-    # --- Check if the delay switch is on ---
+    # --- NEW: Check if the delay switch is on ---
     if DELAY_ENABLED:
-        logger.warning("Service B: Simulating 1-second delay...")
+        logger.warning("Payment Service: Simulating SLOW credit card gateway (1s delay)...")
         time.sleep(1)
     # ------------------------------------------
 
-    logger.info("Service B (v4 Togglable): Work complete, returning.")
-    return "Hello from Service B (Togglable v4)"
+    logger.info("Payment Service: Work complete, returning.")
+    return "Payment Approved"
 
-# --- The admin endpoint to flip the switch ---
+# --- NEW: The admin endpoint to flip the switch ---
 @app.route("/toggle-delay")
 def toggle_delay():
     global DELAY_ENABLED
@@ -36,8 +36,8 @@ def toggle_delay():
     else:
         status = "OFF"
         
-    logger.info(f"--- Service B Delay switch has been turned {status} ---")
-    return f"Service B Delay is now: {status}"
+    logger.info(f"--- Payment Service Delay switch has been turned {status} ---")
+    return f"Payment Service Delay is now: {status}"
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=8080)

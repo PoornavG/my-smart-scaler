@@ -17,20 +17,20 @@ MAX_REPLICAS = 5
 MIN_REPLICAS = 1
 NAMESPACE = "default"
 COOLDOWN_SECONDS = 60
-# --- NEW: Traffic (RPS) threshold for scaling down ---
-# If RPS is below this, we consider it "idle" and can scale down.
 IDLE_RPS_THRESHOLD = 0.5 
 
 last_scale_time = 0
 
+# --- NEW: Service map with real-world names ---
 SERVICES_TO_MONITOR = {
-    "frontend-service": "frontend-deployment",
-    "service-a": "service-a-deployment",
-    "service-b": "service-b-deployment",
+    "web-storefront": "web-storefront-deployment",
+    "inventory-service": "inventory-service-deployment",
+    "payment-service": "payment-service-deployment",
 }
+# We only scale down the backend services
 SERVICES_TO_SCALE_DOWN = {
-    "service-a": "service-a-deployment",
-    "service-b": "service-b-deployment",
+    "inventory-service": "inventory-service-deployment",
+    "payment-service": "payment-service-deployment",
 }
 
 def get_k8s_api():
@@ -77,7 +77,7 @@ def get_average_latency_ms(prom_client, service_name, span_kind, range_sec="1m")
     total_latency_count = get_avg_metric(prom_client, latency_count_query)
 
     if total_latency_sum is None or total_latency_count is None:
-        return None # Error occurred in get_avg_metric
+        return None # Error occurred
     
     if total_latency_count == 0:
         logging.info(f"No requests observed for service: {service_name}, span_kind: {span_kind}")
@@ -111,7 +111,7 @@ def scale_deployment(k8s_api, deployment_name, new_replica_count):
 
 # --- Main Loop ---
 def main_loop():
-    logging.info("--- Custom Scaler Started (v4 - Load-Aware) ---")
+    logging.info("--- Custom E-Commerce Scaler Started (v6 - Load-Aware) ---")
     k8s_api = get_k8s_api()
     prom = get_prometheus_connection()
     
@@ -134,7 +134,7 @@ def main_loop():
 
             # 1. Check overall transaction latency
             total_avg_latency = get_average_latency_ms(
-                prom, "frontend-service", "SPAN_KIND_SERVER", QUERY_RANGE
+                prom, "web-storefront", "SPAN_KIND_SERVER", QUERY_RANGE
             )
 
             if total_avg_latency is None:
@@ -142,7 +142,7 @@ def main_loop():
                 time.sleep(15)
                 continue
 
-            logging.info(f"Current frontend avg latency: {total_avg_latency:.2f} ms")
+            logging.info(f"Current checkout avg latency: {total_avg_latency:.2f} ms")
 
             # --- SCALE UP LOGIC ---
             if total_avg_latency > SLA_MS:
@@ -151,23 +151,26 @@ def main_loop():
                 )
                 
                 # 3. Find the bottleneck using "Self-Time"
-                service_a_server_time = get_average_latency_ms(prom, "service-a", "SPAN_KIND_SERVER", QUERY_RANGE) or 0
-                service_a_client_time = get_average_latency_ms(prom, "service-a", "SPAN_KIND_CLIENT", QUERY_RANGE) or 0
-                service_b_server_time = get_average_latency_ms(prom, "service-b", "SPAN_KIND_SERVER", QUERY_RANGE) or 0
+                inventory_server_time = get_average_latency_ms(prom, "inventory-service", "SPAN_KIND_SERVER", QUERY_RANGE) or 0
+                payment_server_time = get_average_latency_ms(prom, "payment-service", "SPAN_KIND_SERVER", QUERY_RANGE) or 0
 
-                service_a_self_time = service_a_server_time - service_a_client_time
-                service_b_self_time = service_b_server_time
+                # Inventory's self-time = (Its total time) - (time it waited for Payment)
+                inventory_self_time = inventory_server_time - payment_server_time
+                # Payment has no client calls, so its server time IS its self-time
+                payment_self_time = payment_server_time
+
+                if inventory_self_time < 0: inventory_self_time = 0 
 
                 logging.info(
                     f"Bottleneck check: "
-                    f"Service A Self-Time = {service_a_self_time:.2f}ms, "
-                    f"Service B Self-Time = {service_b_self_time:.2f}ms"
+                    f"Inventory Service Self-Time = {inventory_self_time:.2f}ms, "
+                    f"Payment Service Self-Time = {payment_self_time:.2f}ms"
                 )
 
-                if service_a_self_time > service_b_self_time:
-                    bottleneck_service_name = "service-a"
+                if inventory_self_time > payment_self_time:
+                    bottleneck_service_name = "inventory-service"
                 else:
-                    bottleneck_service_name = "service-b"
+                    bottleneck_service_name = "payment-service"
                 
                 k8s_deployment_name = SERVICES_TO_MONITOR[bottleneck_service_name]
                 logging.warning(
@@ -188,26 +191,24 @@ def main_loop():
                                  f"could not get replica count for "
                                  f"{k8s_deployment_name}.")
             
-            # --- NEW: SCALE DOWN LOGIC ---
+            # --- SCALE DOWN LOGIC ---
             else:
                 logging.info("SLA OK. Checking traffic load for scale-down...")
                 
                 # Check current requests per second (RPS)
-                rps_query = f'sum(rate(latency_milliseconds_count{{service_name="frontend-service", span_kind="SPAN_KIND_SERVER"}}[{QUERY_RANGE}]))'
+                rps_query = f'sum(rate(latency_milliseconds_count{{service_name="web-storefront", span_kind="SPAN_KIND_SERVER"}}[{QUERY_RANGE}]))'
                 current_rps = get_avg_metric(prom, rps_query)
 
                 if current_rps is None:
                     logging.warning("Could not determine RPS. Skipping scale-down check.")
                 
-                # ONLY scale down if traffic is below our idle threshold
                 elif current_rps < IDLE_RPS_THRESHOLD:
                     logging.info(f"Traffic is low ({current_rps:.2f} RPS). Checking for services to scale down...")
                     scaled_down_one = False
                     
-                    # Check all scalable services (to scale down whichever is highest)
                     for service_name, k8s_deployment_name in SERVICES_TO_SCALE_DOWN.items():
                         if scaled_down_one:
-                            break # Only scale down one service per loop
+                            break 
                             
                         current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
                         
@@ -218,16 +219,15 @@ def main_loop():
                                 f"{current_replicas} to {new_count} replicas..."
                             )
                             scale_deployment(k8s_api, k8s_deployment_name, new_count)
-                            scaled_down_one = True # Set flag to exit loop
+                            scaled_down_one = True 
                     
                     if not scaled_down_one:
                         logging.info("All services are at minimum replicas. No scale-down needed.")
                 
-                else: # Latency is OK, but traffic is HIGH
+                else: 
                     logging.info(f"SLA OK, but traffic is high ({current_rps:.2f} RPS). Holding current replica count.")
 
             
-            # Wait for 15 seconds before the next check
             time.sleep(15)
 
         except Exception as e:
