@@ -21,7 +21,7 @@ spec:
         - name: acr-secret
       containers:
         - name: web-storefront
-          image: poornavscalernov11.azurecr.io/web-storefront:v1
+          image: poornavscalerfinal.azurecr.io/web-storefront:v1
           ports:
             - containerPort: 8080
 ---
@@ -55,7 +55,7 @@ spec:
         - name: acr-secret
       containers:
         - name: inventory-service
-          image: poornavscalernov11.azurecr.io/inventory-service:v1
+          image: poornavscalerfinal.azurecr.io/inventory-service:v1
           ports:
             - containerPort: 8080
           env:
@@ -92,7 +92,7 @@ spec:
         - name: acr-secret
       containers:
         - name: payment-service
-          image: poornavscalernov11.azurecr.io/payment-service:v1
+          image: poornavscalerfinal.azurecr.io/payment-service:v1
           ports:
             - containerPort: 8080
 ---

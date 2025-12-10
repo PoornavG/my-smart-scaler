@@ -47,7 +47,7 @@ spec:
         - name: acr-secret
       containers:
         - name: scaler
-          image: poornavscalernov11.azurecr.io/scaler:v6
+          image: poornavscalerfinal.azurecr.io/scaler:v6
           env:
             - name: PROMETHEUS_URL
               value: "http://prometheus:9090"
