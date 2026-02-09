@@ -33,15 +33,20 @@ SERVICES_TO_SCALE_DOWN = {
     "payment-service": "payment-service-deployment",
 }
 
+# def get_k8s_api():
+#     """Loads Kubernetes configuration."""
+#     try:
+#         config.load_incluster_config()
+#         logging.info("Loaded in-cluster Kubernetes config.")
+#     except config.ConfigException:
+#         logging.info("Could not load in-cluster config, falling back to local kubeconfig.")
+#         config.load_kube_config()
+#     return client.AppsV1Api()
+
 def get_k8s_api():
-    """Loads Kubernetes configuration."""
-    try:
-        config.load_incluster_config()
-        logging.info("Loaded in-cluster Kubernetes config.")
-    except config.ConfigException:
-        logging.info("Could not load in-cluster config, falling back to local kubeconfig.")
-        config.load_kube_config()
-    return client.AppsV1Api()
+    """Simulated K8s API for local testing."""
+    logging.info("SIMULATION MODE: Skipping Kubernetes config load.")
+    return None # We return None to avoid crashing
 
 def get_prometheus_connection():
     """Connects to the Prometheus server."""
@@ -179,7 +184,13 @@ def main_loop():
                 )
 
                 # 4. Decide to Scale Up
-                current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
+                if k8s_api:
+                    current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
+                    if current_replicas is not None and current_replicas < MAX_REPLICAS:
+                        new_count = current_replicas + 1
+                        scale_deployment(k8s_api, k8s_deployment_name, new_count)
+                else: # <--- ADD THIS BLOCK
+                    logging.info(f"SIMULATION: Scaler would now increase replicas for {k8s_deployment_name}")
                 
                 if current_replicas is not None and current_replicas < MAX_REPLICAS:
                     new_count = current_replicas + 1
@@ -209,16 +220,18 @@ def main_loop():
                     for service_name, k8s_deployment_name in SERVICES_TO_SCALE_DOWN.items():
                         if scaled_down_one:
                             break 
-                            
-                        current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
                         
-                        if current_replicas is not None and current_replicas > MIN_REPLICAS:
-                            new_count = current_replicas - 1
-                            logging.info(
-                                f"Scaling {k8s_deployment_name} DOWN from "
-                                f"{current_replicas} to {new_count} replicas..."
-                            )
-                            scale_deployment(k8s_api, k8s_deployment_name, new_count)
+                        # --- MODIFIED FOR SIMULATION ---
+                        if k8s_api:
+                            current_replicas = get_current_replicas(k8s_api, k8s_deployment_name)
+                            if current_replicas is not None and current_replicas > MIN_REPLICAS:
+                                new_count = current_replicas - 1
+                                logging.info(f"Scaling {k8s_deployment_name} DOWN to {new_count} replicas...")
+                                scale_deployment(k8s_api, k8s_deployment_name, new_count)
+                                scaled_down_one = True 
+                        else:
+                            # This prevents the crash and shows you the logic works!
+                            logging.info(f"SIMULATION: Traffic is low. Would scale down {k8s_deployment_name}")
                             scaled_down_one = True 
                     
                     if not scaled_down_one:

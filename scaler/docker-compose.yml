@@ -1,0 +1,22 @@
+services:
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+
+  web-storefront:
+    image: python:3.9-slim
+    command: python -m http.server 80
+    ports:
+      - "8080:80"
+    volumes:
+      - ./metrics.txt:/metrics
+
+  scaler:
+    build: ./scaler
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+    depends_on:
+      - prometheus

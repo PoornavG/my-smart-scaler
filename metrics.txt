@@ -1,0 +1,2 @@
+latency_milliseconds_count{service_name="web-storefront", span_kind="SPAN_KIND_SERVER"} 2000
+latency_milliseconds_sum{service_name="web-storefront", span_kind="SPAN_KIND_SERVER"} 200000

@@ -1,0 +1,1 @@
+latency_milliseconds_count{service_name="web-storefront", span_kind="SPAN_KIND_SERVER"} 10
